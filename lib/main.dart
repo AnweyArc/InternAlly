@@ -77,8 +77,14 @@ class TimeEntry {
   DateTime date;
   TimeOfDay timeIn;
   TimeOfDay? timeOut;
+  String notes;
 
-  TimeEntry({required this.date, required this.timeIn, this.timeOut});
+  TimeEntry({
+    required this.date,
+    required this.timeIn,
+    this.timeOut,
+    this.notes = '',
+  });
 
   double get duration {
     if (timeOut == null) return 0.0;
@@ -113,6 +119,7 @@ class TimeEntry {
         timeOut != null
             ? {'hour': timeOut!.hour, 'minute': timeOut!.minute}
             : null,
+    'notes': notes, // Add notes to JSON
   };
 
   factory TimeEntry.fromJson(Map<String, dynamic> json) => TimeEntry(
@@ -128,6 +135,7 @@ class TimeEntry {
               minute: json['timeOut']['minute'],
             )
             : null,
+    notes: json['notes'] ?? '', // Load notes from JSON
   );
 }
 
@@ -145,6 +153,8 @@ class _TimeTrackerScreenState extends State<TimeTrackerScreen> {
   Set<TimeEntry> _selectedEntries = {};
   double? _targetHours;
   late TextEditingController _targetController;
+  TextEditingController _notesController = TextEditingController();
+
   ViewMode _viewMode = ViewMode.list;
 
   late Color currentAccent;
@@ -176,6 +186,139 @@ class _TimeTrackerScreenState extends State<TimeTrackerScreen> {
         prefs.getInt('secondAccentColor') ?? Colors.grey.value,
       );
     });
+  }
+
+  void _showEntryOptions(TimeEntry entry) {
+    showDialog(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: Text(
+              'Entry Options',
+              style: TextStyle(color: currentAccent),
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildOptionButton(
+                  icon: Icons.access_time,
+                  label: 'Edit Time Entry',
+                  onTap: () {
+                    Navigator.pop(context);
+                    _editEntry(entry);
+                  },
+                ),
+                _buildOptionButton(
+                  icon: Icons.notes,
+                  label: 'View/Edit Notes',
+                  onTap: () {
+                    Navigator.pop(context);
+                    _showNotesDialog(entry);
+                  },
+                ),
+                _buildOptionButton(
+                  icon: Icons.delete,
+                  label: 'Delete Entry',
+                  onTap: () {
+                    Navigator.pop(context);
+                    _confirmDelete(entry);
+                  },
+                  isCancel: true,
+                ),
+                _buildOptionButton(
+                  icon: Icons.cancel,
+                  label: 'Cancel',
+                  onTap: () => Navigator.pop(context),
+                  isCancel: true,
+                ),
+              ],
+            ),
+          ),
+    );
+  }
+
+  void _confirmDelete(TimeEntry entry) {
+    showDialog(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: Text('Confirm Delete', style: TextStyle(color: Colors.red)),
+            content: Text('Are you sure you want to delete this entry?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text('Cancel', style: TextStyle(color: currentAccent)),
+              ),
+              TextButton(
+                onPressed: () {
+                  setState(() {
+                    _entries.remove(entry);
+                    _selectedEntries.remove(entry);
+                    _saveEntries();
+                  });
+                  Navigator.pop(context);
+                },
+                child: Text('Delete', style: TextStyle(color: Colors.red)),
+              ),
+            ],
+          ),
+    );
+  }
+
+  Widget _buildOptionButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    bool isCancel = false,
+  }) {
+    return ListTile(
+      leading: Icon(icon, color: isCancel ? Colors.red : currentPrimary),
+      title: Text(
+        label,
+        style: TextStyle(
+          color: isCancel ? Colors.red : currentAccent,
+          fontWeight: isCancel ? FontWeight.normal : FontWeight.w500,
+        ),
+      ),
+      onTap: onTap,
+    );
+  }
+
+  void _showNotesDialog(TimeEntry entry) {
+    _notesController.text = entry.notes;
+    showDialog(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: Text(
+              entry.notes.isEmpty ? 'Add Notes' : 'Edit Notes',
+              style: TextStyle(color: currentAccent),
+            ),
+            content: TextField(
+              controller: _notesController,
+              autofocus: true,
+              maxLines: 5,
+              decoration: InputDecoration(
+                border: OutlineInputBorder(),
+                hintText: 'Enter notes for this entry...',
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text('Cancel', style: TextStyle(color: currentAccent)),
+              ),
+              TextButton(
+                onPressed: () {
+                  setState(() => entry.notes = _notesController.text);
+                  _saveEntries();
+                  Navigator.pop(context);
+                },
+                child: Text('Save', style: TextStyle(color: currentPrimary)),
+              ),
+            ],
+          ),
+    );
   }
 
   void _showEntriesForDate(DateTime date) {
@@ -216,11 +359,27 @@ class _TimeTrackerScreenState extends State<TimeTrackerScreen> {
                           color: Theme.of(context).textTheme.bodyLarge?.color,
                         ),
                       ),
-                      subtitle: Text(
-                        'Duration: ${entry.duration.toStringAsFixed(2)}h',
-                        style: TextStyle(
-                          color: Theme.of(context).textTheme.bodyLarge?.color,
-                        ),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SizedBox(height: 8),
+                          Row(/* time chips */),
+                          if (entry.notes.isNotEmpty)
+                            Padding(
+                              padding: EdgeInsets.only(top: 8),
+                              child: Text(
+                                entry.notes,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Theme.of(context)
+                                      .textTheme
+                                      .bodyLarge
+                                      ?.color
+                                      ?.withOpacity(0.7),
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
@@ -338,30 +497,6 @@ class _TimeTrackerScreenState extends State<TimeTrackerScreen> {
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildTimeChipRow(BuildContext context, TimeEntry entry) {
-    final isCompact = MediaQuery.of(context).size.width < 350;
-    return Wrap(
-      spacing: 4,
-      runSpacing: 4,
-      children: [
-        _buildTimeChip(
-          context,
-          'IN',
-          entry.timeIn.format(context),
-          Theme.of(context).primaryColor,
-          compact: isCompact,
-        ),
-        _buildTimeChip(
-          context,
-          'OUT',
-          entry.timeOut?.format(context) ?? 'N/A',
-          Colors.orangeAccent,
-          compact: isCompact,
-        ),
-      ],
     );
   }
 
@@ -1161,42 +1296,20 @@ class _TimeTrackerScreenState extends State<TimeTrackerScreen> {
                                   ],
                                 ),
                                 trailing: Container(
-                                  // Separate trailing parameter
-                                  width: 100,
-                                  child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Text(
-                                        _formatHours(entry.duration),
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.bold,
-                                          color: Theme.of(context).primaryColor,
-                                        ),
+                                  width:
+                                      60, // Reduced width since we only need space for duration
+                                  child: Center(
+                                    child: Text(
+                                      _formatHours(entry.duration),
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.bold,
+                                        color: Theme.of(context).primaryColor,
                                       ),
-                                      SizedBox(height: 4),
-                                      Container(
-                                        height: 26,
-                                        decoration: BoxDecoration(
-                                          color: Colors.red.withOpacity(0.1),
-                                          borderRadius: BorderRadius.circular(
-                                            8,
-                                          ),
-                                        ),
-                                        child: IconButton(
-                                          icon: Icon(
-                                            Icons.delete_rounded,
-                                            color: Colors.red,
-                                            size: 18,
-                                          ),
-                                          padding: EdgeInsets.zero,
-                                          onPressed: () => _deleteEntry(index),
-                                        ),
-                                      ),
-                                    ],
+                                    ),
                                   ),
                                 ),
-                                onTap: () => _editEntry(entry),
+                                onTap: () => _showEntryOptions(entry),
                               ),
                             ),
                           );
@@ -1304,16 +1417,60 @@ class _TimeTrackerScreenState extends State<TimeTrackerScreen> {
         );
       },
     );
+
+    final notes = await showDialog<String>(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: Text('Activity Notes'),
+            content: TextField(
+              controller: _notesController,
+              autofocus: true,
+              decoration: InputDecoration(
+                hintText: 'What did you work on today?',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 3,
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, _notesController.text),
+                child: Text('Save'),
+              ),
+            ],
+          ),
+    );
+
+    if (notes == null) return;
+
     if (timeOut == null) return;
 
-    final newEntry = TimeEntry(date: date, timeIn: timeIn, timeOut: timeOut);
+    final newEntry = TimeEntry(
+      date: date,
+      timeIn: timeIn,
+      timeOut: timeOut,
+      notes: notes,
+    );
+
     setState(() {
       _entries.add(newEntry);
       _saveEntries();
     });
+    _notesController.clear();
   }
 
   Future<void> _editEntry(TimeEntry entry) async {
+    // Store original values in case user cancels
+    final originalDate = entry.date;
+    final originalTimeIn = entry.timeIn;
+    final originalTimeOut = entry.timeOut;
+    final originalNotes = entry.notes;
+
+    // Edit Date
     final newDate = await showDatePicker(
       context: context,
       initialDate: entry.date,
@@ -1321,23 +1478,62 @@ class _TimeTrackerScreenState extends State<TimeTrackerScreen> {
       lastDate: DateTime.now(),
     );
 
+    // Edit Time In
     final newTimeIn = await showTimePicker(
       context: context,
       initialTime: entry.timeIn,
     );
 
+    // Edit Time Out
     final newTimeOut = await showTimePicker(
       context: context,
       initialTime: entry.timeOut ?? TimeOfDay.now(),
     );
 
-    if (newDate != null && newTimeIn != null && newTimeOut != null) {
+    // Edit Notes
+    _notesController.text = entry.notes;
+    final newNotes = await showDialog<String>(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: Text('Edit Notes'),
+            content: TextField(
+              controller: _notesController,
+              decoration: InputDecoration(
+                hintText: 'Update your activity notes',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 3,
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, _notesController.text),
+                child: Text('Save'),
+              ),
+            ],
+          ),
+    );
+
+    // Only update if any changes were made
+    final hasChanges =
+        newDate != null ||
+        newTimeIn != null ||
+        newTimeOut != null ||
+        newNotes != null;
+
+    if (hasChanges) {
       setState(() {
-        entry.date = newDate;
-        entry.timeIn = newTimeIn;
-        entry.timeOut = newTimeOut;
+        entry.date = newDate ?? originalDate;
+        entry.timeIn = newTimeIn ?? originalTimeIn;
+        entry.timeOut = newTimeOut ?? originalTimeOut;
+        entry.notes = newNotes ?? originalNotes;
         _saveEntries();
       });
     }
+    _notesController.clear();
   }
 }
