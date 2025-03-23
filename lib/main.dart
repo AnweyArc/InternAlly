@@ -453,12 +453,6 @@ class _TimeTrackerScreenState extends State<TimeTrackerScreen> {
     final screenWidth = MediaQuery.of(context).size.width;
     final isUltraCompact =
         screenWidth < 300; // New breakpoint for very small screens
-    final fontSize =
-        isUltraCompact
-            ? 9.0
-            : compact
-            ? 10.0
-            : 12.0;
     final padding =
         isUltraCompact
             ? EdgeInsets.symmetric(horizontal: 6, vertical: 2)
@@ -643,16 +637,6 @@ class _TimeTrackerScreenState extends State<TimeTrackerScreen> {
     final prefs = await SharedPreferences.getInstance();
     final entriesJson = jsonEncode(_entries.map((e) => e.toJson()).toList());
     await prefs.setString('entries', entriesJson);
-  }
-
-  void _deleteEntry(int index) {
-    setState(() {
-      final entryIndex = _entries.length - 1 - index;
-      final entryToRemove = _entries[entryIndex];
-      _entries.removeAt(entryIndex);
-      _selectedEntries.remove(entryToRemove);
-      _saveEntries();
-    });
   }
 
   double _convertToHours(int hours, int minutes) {
